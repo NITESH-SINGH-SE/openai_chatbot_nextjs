@@ -1,25 +1,37 @@
 // app/api/chat/route.ts
-import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { NextResponse } from 'next/server';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const message = body.message;
+export async function POST(req: Request) {
+  const { message } = await req.json();
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [
-        { role: 'system', content: 'You are a helpful assistant.' },
-        { role: 'user', content: message },
-      ],
-    });
+  const stream = await openai.chat.completions.create({
+    model: 'gpt-4',
+    stream: true,
+    messages: [
+      { role: 'system', content: 'You are a helpful assistant.' },
+      { role: 'user', content: message },
+    ],
+  });
 
-    return NextResponse.json({ reply: completion.choices[0].message.content });
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: 'Failed to process request' }, { status: 500 });
-  }
+  const encoder = new TextEncoder();
+  const readableStream = new ReadableStream({
+    async start(controller) {
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) {
+          controller.enqueue(encoder.encode(content));
+        }
+      }
+      controller.close();
+    },
+  });
+
+  return new NextResponse(readableStream, {
+    headers: {
+      'Content-Type': 'text/plain',
+    },
+  });
 }

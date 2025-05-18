@@ -18,27 +18,42 @@ export default function ChatPage() {
   }, [messages]);
 
   const sendMessage = async () => {
-    if (!input.trim()) return;
+  if (!input.trim()) return;
 
-    const userMessage = { role: 'user', content: input };
-    setMessages((prev) => [...prev, userMessage]); // Add user message
+  const userMessage = { role: 'user', content: input };
+  setMessages((prev) => [...prev, userMessage]);
 
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: input }),
-      });
+  setInput('');
 
-      const data = await res.json();
-      const assistantMessage = { role: 'assistant', content: data.reply };
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    body: JSON.stringify({ message: input }),
+  });
 
-      setMessages((prev) => [...prev, assistantMessage]); // Add assistant reply
-      setInput('');
-    } catch (err) {
-      console.error('Chat error:', err);
-    }
-  };
+  if (!res.body) return;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let assistantMessage = { role: 'assistant', content: '' };
+
+  setMessages((prev) => [...prev, assistantMessage]); // Temp placeholder
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value, { stream: true });
+    assistantMessage.content += chunk;
+
+    // Update the last assistant message dynamically
+    setMessages((prev) => {
+      const newMessages = [...prev];
+      newMessages[newMessages.length - 1] = { ...assistantMessage };
+      return newMessages;
+    });
+  }
+};
+
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') sendMessage();
